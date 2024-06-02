@@ -1,0 +1,19 @@
+name: Sync Fork
+
+on:
+  push: # push 时触发, 主要是为了测试配置有没有问题
+  schedule:
+    - cron: '0 */6 * * *' # 每6小时触发一次
+
+jobs:
+  repo-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: TG908/fork-sync@v1.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          owner: xtekky # 替换为上游仓库的所有者，例如：original-owner
+          head: main # 上游需要同步的分支
+          base: main # 需要同步到你本地仓库的分支
+          merge_method: merge
+          pr_title: Fork Sync
