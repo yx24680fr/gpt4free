@@ -20,9 +20,15 @@ except ImportError:
 try:
     import nodriver
     from nodriver.cdp.network import CookieParam
+    from nodriver import Browser
     has_nodriver = True
 except ImportError:
     has_nodriver = False
+try:
+    from platformdirs import user_config_dir
+    has_platformdirs = True
+except ImportError:
+    has_platformdirs = False
 
 from .. import debug
 from .raise_for_status import raise_for_status
@@ -109,7 +115,7 @@ def get_args_from_browser(
 
 def get_session_from_browser(url: str, webdriver: WebDriver = None, proxy: str = None, timeout: int = 120) -> Session:
     if not has_curl_cffi:
-        raise MissingRequirementsError('Install "curl_cffi" package')
+        raise MissingRequirementsError('Install "curl_cffi" package | pip install -U curl_cffi')
     args = get_args_from_browser(url, webdriver, proxy, timeout)
     return Session(
         **args,
@@ -117,6 +123,7 @@ def get_session_from_browser(url: str, webdriver: WebDriver = None, proxy: str =
         timeout=timeout,
         impersonate="chrome"
     )
+
 def get_cookie_params_from_dict(cookies: Cookies, url: str = None, domain: str = None) -> list[CookieParam]:
     [CookieParam.from_json({
         "name": key,
@@ -166,3 +173,14 @@ def merge_cookies(cookies: Iterator[Morsel], response: Response) -> Cookies:
         cookies = {}
     for cookie in response.cookies.jar:
         cookies[cookie.name] = cookie.value
+
+async def get_nodriver(proxy: str = None, user_data_dir = "nodriver", **kwargs)-> Browser:
+    if not has_nodriver:
+        raise MissingRequirementsError('Install "nodriver" package | pip install -U nodriver')
+    user_data_dir = user_config_dir(f"g4f-{user_data_dir}") if has_platformdirs else None
+    debug.log(f"Open nodriver with user_dir: {user_data_dir}")
+    return await nodriver.start(
+        user_data_dir=user_data_dir,
+        browser_args=None if proxy is None else [f"--proxy-server={proxy}"],
+        **kwargs
+    )

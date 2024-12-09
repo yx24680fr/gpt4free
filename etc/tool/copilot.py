@@ -18,7 +18,7 @@ g4f.debug.version_check = False
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY')
 G4F_PROVIDER = os.getenv('G4F_PROVIDER')
-G4F_MODEL = os.getenv('G4F_MODEL') or g4f.models.gpt_4
+G4F_MODEL = os.getenv('G4F_MODEL') or g4f.models.default
 
 def get_pr_details(github: Github) -> PullRequest:
     """
@@ -144,7 +144,7 @@ def analyze_code(pull: PullRequest, diff: str)-> list[dict]:
             else:
                 changed_lines.append(f"{offset_line}:{line}")
                 offset_line += 1
-        
+
     return comments
 
 def create_analyze_prompt(changed_lines: list[str], pull: PullRequest, file_path: str):

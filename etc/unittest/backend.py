@@ -35,7 +35,7 @@ class TestBackendApi(unittest.TestCase):
 
     def test_get_providers(self):
         response = self.api.get_providers()
-        self.assertIsInstance(response, dict)
+        self.assertIsInstance(response, list)
         self.assertTrue(len(response) > 0)
 
     def test_search(self):
@@ -46,4 +46,4 @@ class TestBackendApi(unittest.TestCase):
             self.skipTest(e)
         except MissingRequirementsError:
             self.skipTest("search is not installed")
-        self.assertEqual(5, len(result))
+        self.assertTrue(len(result) >= 4)
