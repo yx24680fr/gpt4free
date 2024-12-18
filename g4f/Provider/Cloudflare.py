@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
 
 from ..typing import AsyncResult, Messages, Cookies
 from .base_provider import AsyncGeneratorProvider, ProviderModelMixin, get_running_loop
-from ..requests import Session, StreamSession, get_args_from_nodriver, raise_for_status, merge_cookies
+from ..requests import Session, StreamSession, get_args_from_nodriver, raise_for_status, merge_cookies, DEFAULT_HEADERS, has_nodriver, has_curl_cffi
+from ..errors import ResponseStatusError
 
 class Cloudflare(AsyncGeneratorProvider, ProviderModelMixin):
     label = "Cloudflare AI"
@@ -35,17 +35,23 @@ class Cloudflare(AsyncGeneratorProvider, ProviderModelMixin):
     def get_models(cls) -> str:
         if not cls.models:
             if cls._args is None:
-                get_running_loop(check_nested=True)
-                args = get_args_from_nodriver(cls.url, cookies={
-                    '__cf_bm': uuid.uuid4().hex,
-                })
-                cls._args = asyncio.run(args)
+                if has_nodriver:
+                    get_running_loop(check_nested=True)
+                    args = get_args_from_nodriver(cls.url)
+                    cls._args = asyncio.run(args)
+                elif not has_curl_cffi:
+                    return cls.models
+                else:
+                    cls._args = {"headers": DEFAULT_HEADERS, "cookies": {}}
             with Session(**cls._args) as session:
                 response = session.get(cls.models_url)
-                raise_for_status(response)
+                cls._args["cookies"] = merge_cookies(cls._args["cookies"], response)
+                try:
+                    raise_for_status(response)
+                except ResponseStatusError:
+                    return cls.models
                 json_data = response.json()
                 cls.models = [model.get("name") for model in json_data.get("models")]
-                cls._args["cookies"] = merge_cookies(cls._args["cookies"] , response)
         return cls.models
 
     @classmethod
@@ -59,9 +65,12 @@ class Cloudflare(AsyncGeneratorProvider, ProviderModelMixin):
         timeout: int = 300,
         **kwargs
     ) -> AsyncResult:
-        model = cls.get_model(model)
         if cls._args is None:
-            cls._args = await get_args_from_nodriver(cls.url, proxy, timeout, cookies)
+            if has_nodriver:
+                cls._args = await get_args_from_nodriver(cls.url, proxy, timeout, cookies)
+            else:
+                cls._args = {"headers": DEFAULT_HEADERS, "cookies": {}}
+        model = cls.get_model(model)
         data = {
             "messages": messages,
             "lora": None,
@@ -74,8 +83,12 @@ class Cloudflare(AsyncGeneratorProvider, ProviderModelMixin):
                 cls.api_endpoint,
                 json=data,
             ) as response:
-                await raise_for_status(response)
                 cls._args["cookies"] = merge_cookies(cls._args["cookies"] , response)
+                try:
+                    await raise_for_status(response)
+                except ResponseStatusError:
+                    cls._args = None
+                    raise
                 async for line in response.iter_lines():
                     if line.startswith(b'data: '):
                         if line == b'data: [DONE]':

@@ -8,7 +8,7 @@ try:
     from .curl_cffi import StreamResponse, StreamSession, FormData
     has_curl_cffi = True
 except ImportError:
-    from typing import Type as Session, Type as Response
+    from typing import Type as Response
     from .aiohttp import StreamResponse, StreamSession, FormData
     has_curl_cffi = False
 try:
@@ -20,9 +20,15 @@ except ImportError:
 try:
     import nodriver
     from nodriver.cdp.network import CookieParam
+    from nodriver import Browser
     has_nodriver = True
 except ImportError:
     has_nodriver = False
+try:
+    from platformdirs import user_config_dir
+    has_platformdirs = True
+except ImportError:
+    has_platformdirs = False
 
 from .. import debug
 from .raise_for_status import raise_for_status
@@ -31,6 +37,11 @@ from ..webdriver import bypass_cloudflare, get_driver_cookies
 from ..errors import MissingRequirementsError
 from ..typing import Cookies
 from .defaults import DEFAULT_HEADERS, WEBVIEW_HAEDERS
+
+if not has_curl_cffi:
+    class Session:
+        def __init__(self, **kwargs):
+            raise MissingRequirementsError('Install "curl_cffi" package | pip install -U curl_cffi')
 
 async def get_args_from_webview(url: str) -> dict:
     if not has_webview:
@@ -109,7 +120,7 @@ def get_args_from_browser(
 
 def get_session_from_browser(url: str, webdriver: WebDriver = None, proxy: str = None, timeout: int = 120) -> Session:
     if not has_curl_cffi:
-        raise MissingRequirementsError('Install "curl_cffi" package')
+        raise MissingRequirementsError('Install "curl_cffi" package | pip install -U curl_cffi')
     args = get_args_from_browser(url, webdriver, proxy, timeout)
     return Session(
         **args,
@@ -117,6 +128,7 @@ def get_session_from_browser(url: str, webdriver: WebDriver = None, proxy: str =
         timeout=timeout,
         impersonate="chrome"
     )
+
 def get_cookie_params_from_dict(cookies: Cookies, url: str = None, domain: str = None) -> list[CookieParam]:
     [CookieParam.from_json({
         "name": key,
@@ -144,14 +156,14 @@ async def get_args_from_nodriver(
     else:
         await browser.cookies.set_all(get_cookie_params_from_dict(cookies, url=url, domain=domain))
     page = await browser.get(url)
-    for c in await browser.cookies.get_all():
-        if c.domain.endswith(domain):
-            cookies[c.name] = c.value
+    for c in await page.send(nodriver.cdp.network.get_cookies([url])):
+        cookies[c.name] = c.value
     user_agent = await page.evaluate("window.navigator.userAgent")
     await page.wait_for("body:not(.no-js)", timeout=timeout)
     await page.close()
     browser.stop()
     return {
+        "impersonate": "chrome",
         "cookies": cookies,
         "headers": {
             **DEFAULT_HEADERS,
@@ -166,3 +178,14 @@ def merge_cookies(cookies: Iterator[Morsel], response: Response) -> Cookies:
         cookies = {}
     for cookie in response.cookies.jar:
         cookies[cookie.name] = cookie.value
+
+async def get_nodriver(proxy: str = None, user_data_dir = "nodriver", **kwargs)-> Browser:
+    if not has_nodriver:
+        raise MissingRequirementsError('Install "nodriver" package | pip install -U nodriver')
+    user_data_dir = user_config_dir(f"g4f-{user_data_dir}") if has_platformdirs else None
+    debug.log(f"Open nodriver with user_dir: {user_data_dir}")
+    return await nodriver.start(
+        user_data_dir=user_data_dir,
+        browser_args=None if proxy is None else [f"--proxy-server={proxy}"],
+        **kwargs
+    )
